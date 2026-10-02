@@ -52,8 +52,12 @@ mpcprogress.exe -url http://localhost:7777/variables.html -interval 500ms
 ## Сборка из исходников
 
 ```
-go build -o mpcprogress.exe .
+go build -ldflags="-H=windowsgui" -o mpcprogress.exe .
 ```
+
+Флаг `-ldflags="-H=windowsgui"` убирает консольное окно при запуске (PE-подсистема
+переключается с Console на Windows GUI). Без него exe будет открывать помимо окна
+ещё и чёрную консоль.
 
 Если сборка на Windows падает с ошибкой про `go-gl`/`gl.v2.1` — значит не включён cgo
 или не установлен компилятор C (поставьте MinGW, например `choco install mingw`).
