@@ -9,11 +9,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -101,6 +104,26 @@ func fetchState(url string, client *http.Client) (*MPCState, error) {
 	}, nil
 }
 
+type winRect struct {
+	Left, Top, Right, Bottom int32
+}
+
+// screenLayout возвращает рабочую область экрана (без панели задач)
+// и полную высоту экрана для расчёта размера окна.
+func screenLayout() (work winRect, fullHeight int32) {
+	user32 := syscall.NewLazyDLL("user32.dll")
+	getSystemMetrics := user32.NewProc("GetSystemMetrics")
+	systemParametersInfoW := user32.NewProc("SystemParametersInfoW")
+
+	const spiGetWorkArea = 0x0030
+	const smCyscreen = 1
+
+	systemParametersInfoW.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&work)), 0)
+	h, _, _ := getSystemMetrics.Call(smCyscreen)
+	fullHeight = int32(h)
+	return
+}
+
 func formatTime(ms int64) string {
 	if ms < 0 {
 		ms = 0
@@ -131,7 +154,24 @@ func main() {
 
 	a := app.New()
 	w := a.NewWindow("MPC-HC Progress")
-	w.Resize(fyne.NewSize(900, 170))
+
+	windowWidth, windowHeight := float32(900), float32(170)
+	posX, posY := 0, 0
+	if work, fullHeight := screenLayout(); work.Right > work.Left {
+		windowWidth = float32(work.Right - work.Left)
+		windowHeight = float32(fullHeight) * 0.15
+		posX, posY = int(work.Left), int(work.Top)
+	}
+
+	w.Resize(fyne.NewSize(windowWidth, windowHeight))
+	if dw, ok := w.(desktop.Window); ok {
+		// Fyne игнорирует RequestPosition(0, 0), считая это "позиция не задана",
+		// поэтому сдвигаем на 1px, когда рабочая область начинается в углу экрана.
+		if posX == 0 && posY == 0 {
+			posX = 1
+		}
+		dw.RequestPosition(posX, posY)
+	}
 
 	// --- Виджеты ---
 	fileLabel := widget.NewLabel("Ожидание подключения к MPC-HC...")
