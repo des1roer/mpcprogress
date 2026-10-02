@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -14,6 +16,32 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
+
+const defaultURL = "http://localhost:7777/variables.html"
+
+// loadDotEnv читает KEY=VALUE построчно из .env и выставляет
+// переменные окружения, не перезаписывая уже заданные извне.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		if _, exists := os.LookupEnv(key); !exists {
+			os.Setenv(key, value)
+		}
+	}
+}
 
 var (
 	rePosition    = regexp.MustCompile(`<p id="position">(-?\d+)</p>`)
@@ -88,8 +116,15 @@ func formatTime(ms int64) string {
 }
 
 func main() {
-	urlFlag := flag.String("url", "http://localhost:7777/variables.html",
-		"URL страницы variables.html MPC-HC")
+	loadDotEnv(".env")
+
+	envURL := os.Getenv("MPC_URL")
+	if envURL == "" {
+		envURL = defaultURL
+	}
+
+	urlFlag := flag.String("url", envURL,
+		"URL страницы variables.html MPC-HC (или переменная окружения MPC_URL)")
 	intervalFlag := flag.Duration("interval", 500*time.Millisecond,
 		"Интервал опроса")
 	flag.Parse()
