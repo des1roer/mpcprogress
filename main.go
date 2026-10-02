@@ -108,20 +108,38 @@ type winRect struct {
 	Left, Top, Right, Bottom int32
 }
 
-// screenLayout возвращает рабочую область экрана (без панели задач)
-// и полную высоту экрана для расчёта размера окна.
-func screenLayout() (work winRect, fullHeight int32) {
+type winPoint struct {
+	X, Y int32
+}
+
+type winMonitorInfo struct {
+	CbSize    uint32
+	RcMonitor winRect
+	RcWork    winRect
+	DwFlags   uint32
+}
+
+// screenLayout возвращает рабочую область (без панели задач) и полные границы
+// монитора, на котором сейчас находится курсор мыши — а не всегда основного монитора.
+func screenLayout() (work, monitor winRect) {
 	user32 := syscall.NewLazyDLL("user32.dll")
-	getSystemMetrics := user32.NewProc("GetSystemMetrics")
-	systemParametersInfoW := user32.NewProc("SystemParametersInfoW")
+	getCursorPos := user32.NewProc("GetCursorPos")
+	monitorFromPoint := user32.NewProc("MonitorFromPoint")
+	getMonitorInfoW := user32.NewProc("GetMonitorInfoW")
 
-	const spiGetWorkArea = 0x0030
-	const smCyscreen = 1
+	const monitorDefaultToNearest = 2
 
-	systemParametersInfoW.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&work)), 0)
-	h, _, _ := getSystemMetrics.Call(smCyscreen)
-	fullHeight = int32(h)
-	return
+	var pt winPoint
+	getCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+
+	ptPacked := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
+	hMonitor, _, _ := monitorFromPoint.Call(ptPacked, monitorDefaultToNearest)
+
+	var mi winMonitorInfo
+	mi.CbSize = uint32(unsafe.Sizeof(mi))
+	getMonitorInfoW.Call(hMonitor, uintptr(unsafe.Pointer(&mi)))
+
+	return mi.RcWork, mi.RcMonitor
 }
 
 func formatTime(ms int64) string {
@@ -157,9 +175,9 @@ func main() {
 
 	windowWidth, windowHeight := float32(900), float32(170)
 	posX, posY := 0, 0
-	if work, fullHeight := screenLayout(); work.Right > work.Left {
+	if work, monitor := screenLayout(); work.Right > work.Left {
 		windowWidth = float32(work.Right - work.Left)
-		windowHeight = float32(fullHeight) * 0.15
+		windowHeight = float32(monitor.Bottom-monitor.Top) * 0.15
 		posX, posY = int(work.Left), int(work.Top)
 	}
 
