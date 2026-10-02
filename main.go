@@ -142,6 +142,25 @@ func screenLayout() (work, monitor winRect) {
 	return mi.RcWork, mi.RcMonitor
 }
 
+// titleBarHeight возвращает высоту заголовка окна Windows (вместе с рамкой),
+// чтобы учитывать её при позиционировании — иначе заголовок окажется за краем экрана.
+func titleBarHeight() int32 {
+	user32 := syscall.NewLazyDLL("user32.dll")
+	getSystemMetrics := user32.NewProc("GetSystemMetrics")
+
+	const (
+		smCyCaption      = 4
+		smCySizeFrame    = 33
+		smCxPaddedBorder = 92
+	)
+
+	cyCaption, _, _ := getSystemMetrics.Call(smCyCaption)
+	cySizeFrame, _, _ := getSystemMetrics.Call(smCySizeFrame)
+	cxPaddedBorder, _, _ := getSystemMetrics.Call(smCxPaddedBorder)
+
+	return int32(cyCaption) + int32(cySizeFrame) + int32(cxPaddedBorder)
+}
+
 func formatTime(ms int64) string {
 	if ms < 0 {
 		ms = 0
@@ -176,9 +195,10 @@ func main() {
 	windowWidth, windowHeight := float32(900), float32(170)
 	posX, posY := 0, 0
 	if work, monitor := screenLayout(); work.Right > work.Left {
+		titleBar := titleBarHeight()
 		windowWidth = float32(work.Right - work.Left)
-		windowHeight = float32(monitor.Bottom-monitor.Top) * 0.15
-		posX, posY = int(work.Left), int(work.Top)
+		windowHeight = float32(monitor.Bottom-monitor.Top)*0.15 - float32(titleBar)
+		posX, posY = int(work.Left), int(work.Top)+int(titleBar)
 	}
 
 	w.Resize(fyne.NewSize(windowWidth, windowHeight))
